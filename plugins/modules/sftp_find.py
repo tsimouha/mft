@@ -88,6 +88,7 @@ def sftp_find_files(module, result):
     password = module.params['password']
     port = module.params['port']
     files_found = []
+    file_names = []
     
     with pysftp.Connection(server, username=username, password=password, port=port) as sftp:
 
@@ -102,13 +103,15 @@ def sftp_find_files(module, result):
 
         for file in directory_structure:
             if fnmatch.fnmatch(file.filename, pattern):
-                files_found.append(file.filename)
+                files_found.append(sftp.normalize(file.filename))
+                file_names.append(file.filename)
                 changed = True
 
     result['changed'] = changed
     result['pattern'] = pattern
     result['remote_path'] = path
     result['files_found'] = files_found
+    result['filenames'] = file_names
 
     return result
 
@@ -126,6 +129,7 @@ def run_module():
         changed = False,
         pattern = '',
         files_found = '',
+        file_names = '',
         remote_path=''
     )
 
