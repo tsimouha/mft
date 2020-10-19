@@ -10,21 +10,17 @@ DOCUMENTATION = r'''
 ---
 module: sftp_get
 
-short_description: sftp client module
+short_description: sftp get module
 
-version_added: "1.0.0"
+version_added: "1.0.1"
 
-description: This module acts like an sftp client. It will connect on sftp servers and download files. You can deside whether you delete the files or not from the sftp server.
+description: This module acts like an sftp download client. It will connect on sftp servers and download the requested file(s). You can decide whether you want to archive files on the sftp server or not.
 
 options:
-    path:
+    src:
         description: The path on the remote sftp server where the files are. It can be full path, relative path, or a . for current path.
         required: true
         type: path
-    pattern:
-        description: You can choose a filename, or wildcard ending with file extension. E.g. filaneme.txt or *.csv or ADD_????????_export.csv
-        type: str
-        default: "*"
     local_path:
         description: The local path where the files will be copied to. It can be full path, relative path, or a . for current path.
         required: true
@@ -37,8 +33,8 @@ options:
         description: The TCP port of the remote sftp server. By default it's port 22.
         type: int
         default: 22
-    delete:
-        description: Deside if you want to delete files from the sftp server after they are successfully downloaded.
+    archive:
+        description: Decide if you want to archive files on the sftp server after they have successfully been downloaded.
         type: bool
         default: no
     username:
@@ -61,14 +57,13 @@ EXAMPLES = r'''
 
 - name: Get all files from the remote sftp server and delete them from the source system
   sftp_client:
-    path: /
-    pattern: *.csv
+    src: /filaneme.txt
     local_path: tmp
     server: test.example.com
     port: 22
     username: demo
     password: somepassword
-    delete: true
+    archive: true
 
 '''
 
@@ -101,68 +96,62 @@ def sftp_get_files(module, result):
 
     changed = False
 
-    local_path = os.path.abspath(module.params['local_path'])
+    src = module.params['src']
+    local_path = module.params['local_path']
+    server = module.params['server']
+    username = module.params['username']
+    password = module.params['password']
+    port = module.params['port']
+    archive = module.params['archive']
+
+    local_path = os.path.abspath(local_path)
     local_path = os.path.join(local_path, '')
-    files_proc = []
-    files_skipped = []
-    local_files = []
+    local_file = local_path + os.path.basename(src)
 
-    with pysftp.Connection(module.params['server'], 
-                        username=module.params['username'], 
-                        password=module.params['password'], 
-                        port=module.params['port']) as sftp:
+    skipped = []
 
-        sftp.cwd(module.params['path'])
-        directory_structure = sftp.listdir_attr()
+    with pysftp.Connection(server, username=username, password=password, port=port) as sftp:
 
-        for file in directory_structure:
-            if fnmatch.fnmatch(file.filename, module.params['pattern']):
-                
-                result['remote_files'].append(file.filename)
-                local_file = local_path + file.filename
-                
-                if os.path.isfile(local_file) and sftp.stat(file.filename).st_mtime == os.stat(local_file).st_mtime:
-                    files_skipped.append(file.filename)
-                    continue
-                else:
-                    sftp.get(file.filename, local_file, preserve_mtime=True)
-                    local_files.append(local_file)
-                    files_proc.append(file.filename)
-                    if module.params['delete']:
-                        sftp.remove(file.filename)
-                    changed = True
+        if os.path.isfile(local_file) and sftp.stat(src).st_mtime == os.stat(local_file).st_mtime:
+            skipped.append(src)
+        else:
+            sftp.get(src, local_file, preserve_mtime=True)
+            if archive:
+                a_path, a_filename = os.path.split(src)
+                archive_dest = a_path + "/Archive/" + a_filename
+                try:
+                    sftp.rename(src, archive_dest)
+                except Exception:
+                    pass
+            changed = True
 
     result['changed'] = changed
-    result['pattern'] = module.params['pattern']
-    result['remote_path'] = module.params['path']
+    result['src'] = src
+    result['dest'] = local_file
     result['local_path'] = local_path
-    result['processed_count'] = len(files_proc)
-    result['processed'] = files_proc
-    result['skipped'] = files_skipped
+    result['skipped'] = skipped
 
     return result
 
 def run_module():
     module_args = dict(
-        path=dict(type='path', required=True),
-        pattern=dict(type='str', required=True),
+        src=dict(type='path', required=True),
         local_path=dict(type='path', required=True),
         server=dict(type='str', required=True),
         port=dict(type='int', required=True),
         recurse=dict(type='bool', default=False),
-        delete=dict(type='bool', default=False),
+        archive=dict(type='bool', default=False),
         username=dict(type='str',required=True),
         password=dict(type='str', no_log=True, required=True)
     )
  
     result = dict(
         changed = False,
-        pattern = '',
-        remote_files = list(),
-        processed_count = '',
+        src = '',
+        dest = '',
+        local_path='',
         skipped = '',
-        remote_path='',
-        local_path=''
+        
     )
 
     module = AnsibleModule(
@@ -186,4 +175,3 @@ def main():
 
 if __name__ == '__main__':
     main()
-
