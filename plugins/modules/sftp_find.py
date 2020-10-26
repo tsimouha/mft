@@ -4,6 +4,7 @@
 # Copyright: (c) 2020, Konstantinos Georgoudis <kgeor@blacklines.gr>
 # GNU General Public License v3.0+ (see COPYING or https://www.gnu.org/licenses/gpl-3.0.txt)
 from __future__ import (absolute_import, division, print_function)
+
 __metaclass__ = type
 
 DOCUMENTATION = r'''
@@ -14,31 +15,41 @@ short_description: sftp find module
 
 version_added: "1.0.0"
 
-description: This module acts like an sftp client. It will connect to an sftp server and search for files in the requested path. Using a pattern you can limit your search results.
+description:
+    - Return a list of files based on specific criteria on an sftp server.
+    - Multiple criteria are AND'd together.
 
 options:
     path:
-        description: The path on the remote sftp server where the files are. It can be full path, relative path, or a . for current path.
+        description:
+            - The path on the remote sftp server where the files are.
+            - It can be full path, relative path, or a . for current path.
         required: true
         type: path
     pattern:
-        description: You can choose a filename, or wildcard ending with file extension. E.g. filaneme.txt or *.csv or ADD_????????_export.csv
+        description:
+            - You can choose a filename, or wildcard ending with file extension.
+            - E.g. filename.txt or *.csv or ADD_????????_export.csv
         type: str
         default: "*"
     server:
-        description: The IP address or the FQDN of the remote sftp server.
+        description:
+            - The IP address or the FQDN of the remote sftp server.
         required: true
         type: str
     port:
-        description: The TCP port of the remote sftp server. The default port is 22.
+        description:
+            - The TCP port of the remote sftp server. The default port is 22.
         type: int
         default: 22
     username:
-        description: Username for the sftp server.
+        description:
+            - Username for the sftp server.
         required: true
         type: str
     password:
-        description: Password for the sftp server.
+        description:
+            - Password for the sftp server.
         required: true
         type: str
 
@@ -62,9 +73,7 @@ EXAMPLES = r'''
 
 '''
 
-import os
 import fnmatch
-import json
 import traceback
 from ansible.module_utils.basic import AnsibleModule
 from ansible.module_utils.basic import missing_required_lib
@@ -77,79 +86,61 @@ except ImportError:
     PYSFTP_AVAILABLE = False
     LIB_IMP_ERR = traceback.format_exc()
 
-def sftp_find_files(module, result):
 
-    changed = False
+def sftp_check_sftp_path(path, sftp, module):
+    if not sftp.exists(path):
+        module.fail_json(msg="The path %s does not exists" % path)
+
+    if sftp.isfile(path):
+        module.fail_json(msg="The path %s is not a directory" % path)
+
+
+def main():
+    module = AnsibleModule(
+        argument_spec=dict(
+            path=dict(type='path', required=True),
+            pattern=dict(type='str', required=True),
+            server=dict(type='str', required=True),
+            port=dict(type='int', required=True),
+            username=dict(type='str', required=True),
+            password=dict(type='str', no_log=True, required=True)
+        ),
+        supports_check_mode=True
+    )
 
     path = module.params['path']
     pattern = module.params['pattern']
     server = module.params['server']
+    port = module.params['port']
     username = module.params['username']
     password = module.params['password']
-    port = module.params['port']
+
     files_found = []
     file_names = []
-    
-    with pysftp.Connection(server, username=username, password=password, port=port) as sftp:
 
-        if not sftp.exists(path):
-            module.fail_json(msg="The path %s does not exists" % (path))
+    if not PYSFTP_AVAILABLE:
+        module.fail_json(msg=missing_required_lib("pysftp"), exception=LIB_IMP_ERR)
 
-        if sftp.isfile(path):
-            module.fail_json(msg="The path %s is not a directory" % (path))
+    with pysftp.Connection(server,
+                           username=username,
+                           password=password,
+                           port=port) as sftp:
+
+        sftp_check_sftp_path(path, sftp, module)
 
         sftp.cwd(path)
         directory_structure = sftp.listdir_attr()
 
         for file in directory_structure:
             if fnmatch.fnmatch(file.filename, pattern):
-                files_found.append(sftp.normalize(file.filename))
-                file_names.append(file.filename)
                 changed = True
 
-    result['changed'] = changed
-    result['pattern'] = pattern
-    result['remote_path'] = path
-    result['files_found'] = files_found
-    result['filenames'] = file_names
+            if changed and not module.check_mode:
+                files_found.append(sftp.normalize(file.filename))
+                file_names.append(file.filename)
 
-    return result
+    module.exit_json(files_found=files_found, file_names=file_names, changed=changed)
 
-def run_module():
-    module_args = dict(
-        path=dict(type='path', required=True),
-        pattern=dict(type='str', required=True),
-        server=dict(type='str', required=True),
-        port=dict(type='int', required=True),
-        username=dict(type='str',required=True),
-        password=dict(type='str', no_log=True, required=True)
-    )
-
-    result = dict(
-        changed = False,
-        pattern = '',
-        files_found = '',
-        file_names = '',
-        remote_path=''
-    )
-
-    module = AnsibleModule(
-        argument_spec=module_args,
-        supports_check_mode=True
-    )
-
-    if not PYSFTP_AVAILABLE:
-        module.fail_json(msg=missing_required_lib("pysftp"), exception=LIB_IMP_ERR)
-
-    if module.check_mode:
-        module.exit_json(**result)
-
-    sftp_find_files(module, result)
-
-    module.exit_json(**result)
-
-def main():
-    run_module()
 
 if __name__ == '__main__':
     main()

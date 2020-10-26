@@ -4,9 +4,8 @@
 # Copyright: (c) 2020, Konstantinos Georgoudis <kgeor@blacklines.gr>
 # GNU General Public License v3.0+ (see COPYING or https://www.gnu.org/licenses/gpl-3.0.txt)
 
-import os
-import pysftp
-from ansible.module_utils.basic import AnsibleModule
+from __future__ import absolute_import, division, print_function
+__metaclass__ = type
 
 DOCUMENTATION = r'''
 ---
@@ -16,7 +15,7 @@ short_description: sftp get module
 
 version_added: "1.1.0"
 
-description: This module acts like an sftp fetch client. It will connect on sftp servers and download the requested file(s). You can decide whether you want to archive files on the sftp server or not.
+description: This module acts like an sftp fetch client. It will connect on sftp servers and download the requested file(s). You can decide whether you want to archive files on the sftp server or not. 
 
 options:
     src:
@@ -67,6 +66,10 @@ EXAMPLES = r'''
     password: 'somepassword'
     archive: true
 '''
+
+import os
+import pysftp
+from ansible.module_utils.basic import AnsibleModule
 
 
 def check_local_path(module, local_path):
